@@ -1,6 +1,18 @@
 #include <CL/cl.h>
 #include <iostream>
 
+#define RET_CODE_CHECK(retCode, func)                                      \
+    retCode = func;                                                        \
+    if (retCode) printf("Error: retCode = %d\n", static_cast<int>(retCode));
+
+#define RET_CODE_FUNC_CHECK(retCode, func)                                 \
+    func;                                                                  \
+    if (retCode) printf("Error: retCode = %d\n", static_cast<int>(retCode));
+
+#define RET_CODE_RETURN_CHECK(retCode, func, result)                       \
+    result = func;                                                         \
+    if (retCode) printf("Error: retCode = %d\n", static_cast<int>(retCode));
+
 const char* kernelSource =
 "__kernel void addGlobalIndex(__global int *array, const size_t size) {\n"\
 "    int globalID = get_global_id(0);                          "\
@@ -57,21 +69,24 @@ int main() {
         (cl_context_properties)platform,
         0
     };
-    cl_context context = clCreateContextFromType((platform == nullptr) ? nullptr : properties,
-        CL_DEVICE_TYPE_GPU, 0, 0, &retCode);
+    cl_context context;
+    RET_CODE_RETURN_CHECK(retCode, clCreateContextFromType((platform == nullptr) ? nullptr : properties,
+        CL_DEVICE_TYPE_GPU, 0, 0, &retCode), context)
 
     size_t gpuCount = 0;
-    clGetContextInfo(context, CL_CONTEXT_DEVICES, 0, 0, &gpuCount);
+    RET_CODE_FUNC_CHECK(retCode, clGetContextInfo(context, CL_CONTEXT_DEVICES, 0, 0, &gpuCount))
 
     cl_device_id* gpus = new cl_device_id[gpuCount];
-    clGetContextInfo(context, CL_CONTEXT_DEVICES, gpuCount, gpus, 0);
+    RET_CODE_FUNC_CHECK(retCode, clGetContextInfo(context, CL_CONTEXT_DEVICES, gpuCount, gpus, 0))
     cl_device_id gpu = gpus[0];
 
-    cl_command_queue queue = clCreateCommandQueueWithProperties(context, gpu, 0, &retCode);
+    cl_command_queue queue;
+    RET_CODE_RETURN_CHECK(retCode, clCreateCommandQueueWithProperties(context, gpu, 0, &retCode), queue)
 
     size_t kernelLen = strlen(kernelSource);
 
-    cl_program program = clCreateProgramWithSource(context, 1, &kernelSource, &kernelLen, &retCode);
+    cl_program program;
+    RET_CODE_RETURN_CHECK(retCode, clCreateProgramWithSource(context, 1, &kernelSource, &kernelLen, &retCode), program)
     clBuildProgram(program, 1, &gpu, 0, 0, 0);
 
     cl_kernel kernel = clCreateKernel(program, "addGlobalIndex", 0);
@@ -87,21 +102,23 @@ int main() {
     printf("\n");
 
     size_t biteSize = sizeof(int) * size;
-    cl_mem buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, biteSize, 0, &retCode);
 
-    retCode = clEnqueueWriteBuffer(queue, buffer, CL_TRUE, 0, biteSize, array, 0, 0, 0);
+    cl_mem buffer;
+    RET_CODE_RETURN_CHECK(retCode, clCreateBuffer(context, CL_MEM_READ_WRITE, biteSize, 0, &retCode), buffer)
 
-    retCode = clSetKernelArg(kernel, 0, sizeof(cl_mem), &buffer);
+    RET_CODE_CHECK(retCode, clEnqueueWriteBuffer(queue, buffer, CL_TRUE, 0, biteSize, array, 0, 0, 0))
 
-    retCode = clSetKernelArg(kernel, 1, sizeof(size_t), &size);
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 0, sizeof(cl_mem), &buffer))
+
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 1, sizeof(size_t), &size))
 
     size_t group;
-    retCode = clGetKernelWorkGroupInfo(kernel, gpu, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &group, 0);
+    RET_CODE_CHECK(retCode, clGetKernelWorkGroupInfo(kernel, gpu, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &group, 0))
 
     printf("group = %zu, size = %zu\n", group, size);
-    retCode = clEnqueueNDRangeKernel(queue, kernel, 1, 0, &size, &group, 0, 0, 0);
+    RET_CODE_CHECK(retCode, clEnqueueNDRangeKernel(queue, kernel, 1, 0, &size, &group, 0, 0, 0))
 
-    retCode = clEnqueueReadBuffer(queue, buffer, CL_TRUE, 0, biteSize, array, 0, 0, 0);
+    RET_CODE_CHECK(retCode, clEnqueueReadBuffer(queue, buffer, CL_TRUE, 0, biteSize, array, 0, 0, 0))
 
     printf("array:");
     for (size_t i = 0; i < size; ++i)
