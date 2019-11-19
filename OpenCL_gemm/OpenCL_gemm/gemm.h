@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <fstream>
 #include <chrono>
+#include <algorithm>
 
 
 #define RET_CODE_CHECK(retCode, func, message)                                             \
@@ -33,6 +34,69 @@ auto omp_gemm(const cl_uint n, const float *a, const float *b, float *c) {
             for (k = 0; k < n; ++k)
                 c_ij += a[i * n + k] * b[k * n + j];
             c[i * n + j] = c_ij;
+        }
+    }
+
+    auto time = std::chrono::steady_clock::now() - t0;
+
+    return time;
+}
+
+
+auto omp_gemm_block(const cl_uint n, const float *a, const float *b, float *c) {
+//     int iBlock, i, j, k, l;
+//     cl_uint nBlock = n / BLOCK_SIZE;
+//     float c_ij;
+//     const float *local_a, *local_b;
+//     float *local_c;
+//     auto t0 = std::chrono::steady_clock::now();
+//     for (i = 0; i < nBlock; ++i) {
+//         for (j = 0; j < nBlock; ++j) {
+//             c_ij = 0.0f;
+// #pragma omp parallel for shared (n, a, b, c, nBlock) private(i, j, k, c_ij, local_a, local_b, local_c)
+//             for (iBlock = 0; iBlock < nBlock; ++iBlock) {
+//                 local_a = a + (i * BLOCK_SIZE + k) * n + (iBlock * BLOCK_SIZE + l);
+//                 local_b = b + (iBlock * BLOCK_SIZE + l) * n + (j * BLOCK_SIZE + k);
+//                 for (k = 0; k < BLOCK_SIZE; ++k) {
+//                     for (l = 0; l < BLOCK_SIZE; ++l)
+//                         c_ij += a[iBlock * n + j] * b[k * n + i];
+//                 }
+//             }
+//             c[iBlock * n + i] = c_ij;
+//         }
+//     }
+
+    int globalRow, globalCol, row, col, iBlock, i, rowOfBlock, columnOfBlock;
+    int nBlock = n / BLOCK_SIZE;
+
+    float Asub[BLOCK_SIZE][BLOCK_SIZE];
+    float Bsub[BLOCK_SIZE][BLOCK_SIZE];
+
+    float result = 0.0f;
+
+    auto t0 = std::chrono::steady_clock::now();
+
+#pragma omp parallel for shared (n, a, b, c, nBlock, Asub, Bsub) private(globalRow, globalCol, row, col, iBlock, i, result)
+    for (globalRow = 0; globalRow < n; ++globalRow) {
+        for (globalCol = 0; globalCol < n; ++globalCol) {
+            row = globalRow % BLOCK_SIZE;
+            col = globalCol % BLOCK_SIZE;
+
+            result = 0.0f;
+
+            for (iBlock = 0; iBlock < nBlock; ++iBlock) {
+                rowOfBlock = BLOCK_SIZE * iBlock + row;
+                columnOfBlock = BLOCK_SIZE * iBlock + col;
+
+                Asub[col][row] = a[globalRow * n + columnOfBlock];
+                Bsub[col][row] = b[rowOfBlock * n + globalCol];
+
+                for (i = 0; i < BLOCK_SIZE; ++i) {
+                      result += Asub[i][row] * Bsub[col][i];
+                }
+            }
+
+            c[globalRow * n + globalCol] = result;
         }
     }
 
@@ -103,10 +167,18 @@ void initializeKernel(cl_kernel& kernel, cl_context& context, cl_command_queue& 
 }
 
 
+template <bool useImage = false>
 void setKernelArguments(const cl_uint n, const float *a, const float *b, float *c,
                         cl_kernel& kernel, cl_context& context, cl_command_queue& queue,
                         cl_device_id& device, cl_int& retCode, cl_mem& aBuffer, cl_mem& bBuffer,
-                        cl_mem& cBuffer) {
+                        cl_mem& cBuffer);
+
+
+template <>
+void setKernelArguments<false>(const cl_uint n, const float *a, const float *b, float *c,
+                               cl_kernel& kernel, cl_context& context, cl_command_queue& queue,
+                               cl_device_id& device, cl_int& retCode, cl_mem& aBuffer, cl_mem& bBuffer,
+                               cl_mem& cBuffer) {
     cl_uint biteSize = sizeof(float) * n * n;
 
     RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 0, sizeof(cl_uint), &n), "clSetKernelArg")
@@ -125,6 +197,42 @@ void setKernelArguments(const cl_uint n, const float *a, const float *b, float *
 }
 
 
+template <>
+void setKernelArguments<true>(const cl_uint n, const float *a, const float *b, float *c,
+                              cl_kernel& kernel, cl_context& context, cl_command_queue& queue,
+                              cl_device_id& device, cl_int& retCode, cl_mem& aBuffer, cl_mem& bBuffer,
+                              cl_mem& cBuffer) {
+    cl_uint biteSize = sizeof(float) * n * n;
+
+    cl_image_format imgFormat = {CL_INTENSITY, CL_FLOAT};
+    cl_image_desc imgDesc = {CL_MEM_OBJECT_IMAGE2D, n, n, 1, 1, 0, 0, 0, 0, 0};
+
+    const size_t origin[] {0, 0, 0};
+    const size_t region[] {1, 1, 1};
+
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 0, sizeof(cl_uint), &n), "clSetKernelArg")
+
+    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_ONLY, &imgFormat, &imgDesc, 0, &retCode),
+                          aBuffer, "clCreateImage")
+    RET_CODE_CHECK(retCode, clEnqueueWriteImage(queue, aBuffer, CL_TRUE, origin, region, 0, 0, a, 0, 0, 0),
+                   "clEnqueueWriteImage")
+    printf("aBuffer = %p\n", &aBuffer);
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 1, sizeof(cl_mem), &aBuffer), "clSetKernelArg a")
+
+    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_ONLY, &imgFormat, &imgDesc, 0, &retCode),
+                          bBuffer, "clCreateImage")
+    RET_CODE_CHECK(retCode, clEnqueueWriteImage(queue, bBuffer, CL_TRUE, origin, region, 0, 0, b, 0, 0, 0),
+                   "clEnqueueWriteImage")
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 2, sizeof(cl_mem), &bBuffer), "clSetKernelArg b")
+
+    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_WRITE, &imgFormat, &imgDesc, 0, &retCode),
+                          cBuffer, "clCreateImage")
+    RET_CODE_CHECK(retCode, clEnqueueWriteImage(queue, cBuffer, CL_TRUE, origin, region, 0, 0, c, 0, 0, 0),
+                   "clEnqueueWriteImage")
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 3, sizeof(cl_mem), &cBuffer), "clSetKernelArg c")
+}
+
+
 auto opencl_gemm_impl(const cl_uint n, const float *a, const float *b, float *c,
                       const char *filename, const char *kernelName, cl_device_type deviceType) {
     cl_context context;
@@ -137,7 +245,7 @@ auto opencl_gemm_impl(const cl_uint n, const float *a, const float *b, float *c,
     size_t groupSize = 0;
 
     initializeKernel(kernel, context, queue, device, program, retCode, filename, kernelName, deviceType);
-    setKernelArguments(n, a, b, c, kernel, context, queue, device, retCode, aBuffer, bBuffer, cBuffer);
+    setKernelArguments<true>(n, a, b, c, kernel, context, queue, device, retCode, aBuffer, bBuffer, cBuffer);
 
     cl_event event;
     const size_t nWorkItems[] = {n, n};

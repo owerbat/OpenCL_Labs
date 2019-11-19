@@ -33,11 +33,29 @@ int main() {
     print_matrix(c, n, m, "OpenCL CPU result:");
     clear_matrix(c, n);
 
+    // OpenMP Block
+    auto ompBlockTime = omp_gemm_block(n, a, b, c);
+    print_matrix(c, n, m, "OpenMP Block result:");
+    clear_matrix(c, n);
+
+    // OpenCL GPU Block
+    auto openCLGPUBlockTime = opencl_gemm_block_gpu(n, a, b, c);
+    print_matrix(c, n, m, "OpenCL GPU Block result:");
+    clear_matrix(c, n);
+
+    // OpenCL GPU Block
+    auto openCLCPUBlockTime = opencl_gemm_block_cpu(n, a, b, c);
+    print_matrix(c, n, m, "OpenCL CPU Block result:");
+    clear_matrix(c, n);
+
     // Total
     std::cout << "Time:\n"
-              << "OpenMP     " << std::chrono::duration_cast<std::chrono::milliseconds>(ompTime).count() << " ms\n"
-              << "OpenCL GPU " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLGPUTime).count() << " ms\n"
-              << "OpenCL CPU " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLCPUTime).count() << " ms\n";
+              << "OpenMP           " << std::chrono::duration_cast<std::chrono::milliseconds>(ompTime).count() << " ms\n"
+              << "OpenCL GPU       " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLGPUTime).count() << " ms\n"
+              << "OpenCL CPU       " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLCPUTime).count() << " ms\n"
+              << "OpenMP Block     " << std::chrono::duration_cast<std::chrono::milliseconds>(ompBlockTime).count() << " ms\n"
+              << "OpenCL GPU Block " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLGPUBlockTime).count() << " ms\n"
+              << "OpenCL CPU Block " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLCPUBlockTime).count() << " ms\n";
 
     delete[] a, b, c;
 
