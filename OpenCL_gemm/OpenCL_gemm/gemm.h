@@ -37,72 +37,42 @@ auto omp_gemm(const cl_uint n, const float *a, const float *b, float *c) {
         }
     }
 
-    auto time = std::chrono::steady_clock::now() - t0;
-
-    return time;
+    return std::chrono::steady_clock::now() - t0;
 }
 
 
 auto omp_gemm_block(const cl_uint n, const float *a, const float *b, float *c) {
-//     int iBlock, i, j, k, l;
-//     cl_uint nBlock = n / BLOCK_SIZE;
-//     float c_ij;
-//     const float *local_a, *local_b;
-//     float *local_c;
-//     auto t0 = std::chrono::steady_clock::now();
-//     for (i = 0; i < nBlock; ++i) {
-//         for (j = 0; j < nBlock; ++j) {
-//             c_ij = 0.0f;
-// #pragma omp parallel for shared (n, a, b, c, nBlock) private(i, j, k, c_ij, local_a, local_b, local_c)
-//             for (iBlock = 0; iBlock < nBlock; ++iBlock) {
-//                 local_a = a + (i * BLOCK_SIZE + k) * n + (iBlock * BLOCK_SIZE + l);
-//                 local_b = b + (iBlock * BLOCK_SIZE + l) * n + (j * BLOCK_SIZE + k);
-//                 for (k = 0; k < BLOCK_SIZE; ++k) {
-//                     for (l = 0; l < BLOCK_SIZE; ++l)
-//                         c_ij += a[iBlock * n + j] * b[k * n + i];
-//                 }
-//             }
-//             c[iBlock * n + i] = c_ij;
-//         }
-//     }
-
-    int globalRow, globalCol, row, col, iBlock, i, rowOfBlock, columnOfBlock;
-    int nBlock = n / BLOCK_SIZE;
-
-    float Asub[BLOCK_SIZE][BLOCK_SIZE];
-    float Bsub[BLOCK_SIZE][BLOCK_SIZE];
-
-    float result = 0.0f;
+    int i = 0, j = 0, k = 0, jj = 0, kk = 0;
+    float tmp;
+    int chunk = 1;
+    int tid;
 
     auto t0 = std::chrono::steady_clock::now();
 
-#pragma omp parallel for shared (n, a, b, c, nBlock, Asub, Bsub) private(globalRow, globalCol, row, col, iBlock, i, result)
-    for (globalRow = 0; globalRow < n; ++globalRow) {
-        for (globalCol = 0; globalCol < n; ++globalCol) {
-            row = globalRow % BLOCK_SIZE;
-            col = globalCol % BLOCK_SIZE;
-
-            result = 0.0f;
-
-            for (iBlock = 0; iBlock < nBlock; ++iBlock) {
-                rowOfBlock = BLOCK_SIZE * iBlock + row;
-                columnOfBlock = BLOCK_SIZE * iBlock + col;
-
-                Asub[col][row] = a[globalRow * n + columnOfBlock];
-                Bsub[col][row] = b[rowOfBlock * n + globalCol];
-
-                for (i = 0; i < BLOCK_SIZE; ++i) {
-                      result += Asub[i][row] * Bsub[col][i];
+#pragma omp parallel shared(a, b, c, n, chunk) private(i, j, k, jj, kk, tid, tmp)
+    {
+        #pragma omp for schedule (static, chunk)
+        for (jj = 0; jj < n; jj += BLOCK_SIZE)
+        {
+            for (kk = 0; kk < n; kk += BLOCK_SIZE)
+            {
+                for (i = 0; i < n; i++)
+                {
+                    for (j = jj; j < ((jj + BLOCK_SIZE) > n ? n : (jj + BLOCK_SIZE)); j++)
+                    {
+                        tmp = 0.0f;
+                        for (k = kk; k < ((kk + BLOCK_SIZE) > n ? n : (kk + BLOCK_SIZE)); k++)
+                        {
+                            tmp += a[i * n + k] * b[k * n + j];
+                        }
+                        c[i * n + j] += tmp;
+                    }
                 }
             }
-
-            c[globalRow * n + globalCol] = result;
         }
     }
 
-    auto time = std::chrono::steady_clock::now() - t0;
-
-    return time;
+    return std::chrono::steady_clock::now() - t0;
 }
 
 
@@ -233,8 +203,8 @@ void setKernelArguments<true>(const cl_uint n, const float *a, const float *b, f
 }
 
 
-auto opencl_gemm_impl(const cl_uint n, const float *a, const float *b, float *c,
-                      const char *filename, const char *kernelName, cl_device_type deviceType) {
+auto opencl_gemm_impl(const cl_uint n, const float *a, const float *b, float *c, const char *filename,
+                      const char *kernelName, cl_device_type deviceType, const bool useImage = false) {
     cl_context context;
     cl_command_queue queue;
     cl_kernel kernel;
@@ -245,7 +215,8 @@ auto opencl_gemm_impl(const cl_uint n, const float *a, const float *b, float *c,
     size_t groupSize = 0;
 
     initializeKernel(kernel, context, queue, device, program, retCode, filename, kernelName, deviceType);
-    setKernelArguments<true>(n, a, b, c, kernel, context, queue, device, retCode, aBuffer, bBuffer, cBuffer);
+    if (useImage) setKernelArguments<true >(n, a, b, c, kernel, context, queue, device, retCode, aBuffer, bBuffer, cBuffer);
+    else          setKernelArguments<false>(n, a, b, c, kernel, context, queue, device, retCode, aBuffer, bBuffer, cBuffer);
 
     cl_event event;
     const size_t nWorkItems[] = {n, n};
@@ -285,4 +256,24 @@ auto opencl_gemm_block_cpu(const cl_uint n, const float *a, const float *b, floa
 
 auto opencl_gemm_block_gpu(const cl_uint n, const float *a, const float *b, float *c) {
     return opencl_gemm_impl(n, a, b, c, "gemm_block_kernel.cl", "gemm_block", CL_DEVICE_TYPE_GPU);
+}
+
+
+auto opencl_gemm_cpu_image(const cl_uint n, const float *a, const float *b, float *c) {
+    return opencl_gemm_impl(n, a, b, c, "gemm_kernel.cl", "gemm", CL_DEVICE_TYPE_CPU, true);
+}
+
+
+auto opencl_gemm_gpu_image(const cl_uint n, const float *a, const float *b, float *c) {
+    return opencl_gemm_impl(n, a, b, c, "gemm_kernel.cl", "gemm", CL_DEVICE_TYPE_GPU, true);
+}
+
+
+auto opencl_gemm_block_cpu_image(const cl_uint n, const float *a, const float *b, float *c) {
+    return opencl_gemm_impl(n, a, b, c, "gemm_block_kernel.cl", "gemm_block", CL_DEVICE_TYPE_CPU, true);
+}
+
+
+auto opencl_gemm_block_gpu_image(const cl_uint n, const float *a, const float *b, float *c) {
+    return opencl_gemm_impl(n, a, b, c, "gemm_block_kernel.cl", "gemm_block", CL_DEVICE_TYPE_GPU, true);
 }
