@@ -126,10 +126,12 @@ void initializeKernel(cl_kernel& kernel, cl_context& context, cl_command_queue& 
         &kernelLen, &retCode), program, "clCreateProgramWithSource")
     clBuildProgram(program, 1, &device, 0, 0, 0);
 
-    // size_t logSize = 1000, actualLogSize;
-    // char *log = new char[logSize];
-    // clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, logSize, log, &actualLogSize);
-    // printf("log:\n%s\n", log);
+    size_t logSize = 1000, actualLogSize;
+    char *log = new char[logSize];
+    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, logSize, log, &actualLogSize);
+    printf("\n-------------------------------------\n");
+    printf("log:\n%s", log);
+    printf("-------------------------------------\n\n");
 
     kernel = clCreateKernel(program, kernelName, 0);
 
@@ -174,32 +176,26 @@ void setKernelArguments<true>(const cl_uint n, const float *a, const float *b, f
                               cl_mem& cBuffer) {
     cl_uint biteSize = sizeof(float) * n * n;
 
-    cl_image_format imgFormat = {CL_INTENSITY, CL_FLOAT};
+    cl_image_format imgFormat = {CL_R, CL_FLOAT};
     cl_image_desc imgDesc = {CL_MEM_OBJECT_IMAGE2D, n, n, 1, 1, 0, 0, 0, 0, 0};
 
     const size_t origin[] {0, 0, 0};
     const size_t region[] {1, 1, 1};
 
-    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 0, sizeof(cl_uint), &n), "clSetKernelArg")
+    // RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 0, sizeof(cl_uint), &n), "clSetKernelArg")
 
-    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_ONLY, &imgFormat, &imgDesc, 0, &retCode),
-                          aBuffer, "clCreateImage")
-    RET_CODE_CHECK(retCode, clEnqueueWriteImage(queue, aBuffer, CL_TRUE, origin, region, 0, 0, a, 0, 0, 0),
-                   "clEnqueueWriteImage")
+    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+                          &imgFormat, &imgDesc, (void*)a, &retCode), aBuffer, "clCreateImage a")
     printf("aBuffer = %p\n", &aBuffer);
     RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 1, sizeof(cl_mem), &aBuffer), "clSetKernelArg a")
 
-    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_ONLY, &imgFormat, &imgDesc, 0, &retCode),
-                          bBuffer, "clCreateImage")
-    RET_CODE_CHECK(retCode, clEnqueueWriteImage(queue, bBuffer, CL_TRUE, origin, region, 0, 0, b, 0, 0, 0),
-                   "clEnqueueWriteImage")
+    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR,
+                          &imgFormat, &imgDesc, (void*)b, &retCode), bBuffer, "clCreateImage b")
     RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 2, sizeof(cl_mem), &bBuffer), "clSetKernelArg b")
 
-    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_WRITE, &imgFormat, &imgDesc, 0, &retCode),
-                          cBuffer, "clCreateImage")
-    RET_CODE_CHECK(retCode, clEnqueueWriteImage(queue, cBuffer, CL_TRUE, origin, region, 0, 0, c, 0, 0, 0),
-                   "clEnqueueWriteImage")
-    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 3, sizeof(cl_mem), &cBuffer), "clSetKernelArg c")
+    RET_CODE_RETURN_CHECK(retCode, clCreateImage(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+                          &imgFormat, &imgDesc, c, &retCode), cBuffer, "clCreateImage c")
+    RET_CODE_CHECK(retCode, clSetKernelArg(kernel, 0, sizeof(cl_mem), &cBuffer), "clSetKernelArg c")
 }
 
 
@@ -260,20 +256,20 @@ auto opencl_gemm_block_gpu(const cl_uint n, const float *a, const float *b, floa
 
 
 auto opencl_gemm_cpu_image(const cl_uint n, const float *a, const float *b, float *c) {
-    return opencl_gemm_impl(n, a, b, c, "gemm_kernel.cl", "gemm", CL_DEVICE_TYPE_CPU, true);
+    return opencl_gemm_impl(n, a, b, c, "image_kernel.cl", "matrixMulImg", CL_DEVICE_TYPE_CPU, true);
 }
 
 
 auto opencl_gemm_gpu_image(const cl_uint n, const float *a, const float *b, float *c) {
-    return opencl_gemm_impl(n, a, b, c, "gemm_kernel.cl", "gemm", CL_DEVICE_TYPE_GPU, true);
+    return opencl_gemm_impl(n, a, b, c, "image_kernel.cl", "matrixMulImg", CL_DEVICE_TYPE_GPU, true);
 }
 
 
 auto opencl_gemm_block_cpu_image(const cl_uint n, const float *a, const float *b, float *c) {
-    return opencl_gemm_impl(n, a, b, c, "gemm_block_kernel.cl", "gemm_block", CL_DEVICE_TYPE_CPU, true);
+    return opencl_gemm_impl(n, a, b, c, "image_block_kernel.cl", "matrixMulImg", CL_DEVICE_TYPE_CPU, true);
 }
 
 
 auto opencl_gemm_block_gpu_image(const cl_uint n, const float *a, const float *b, float *c) {
-    return opencl_gemm_impl(n, a, b, c, "gemm_block_kernel.cl", "gemm_block", CL_DEVICE_TYPE_GPU, true);
+    return opencl_gemm_impl(n, a, b, c, "image_block_kernel.cl", "matrixMulImg", CL_DEVICE_TYPE_GPU, true);
 }
