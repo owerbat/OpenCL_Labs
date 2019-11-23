@@ -6,7 +6,7 @@ void clear_matrix(float *matrix, const cl_uint size);
 
 
 int main() {
-    const cl_uint n = BLOCK_SIZE * (2 << 4), m = 5;
+    const cl_uint n = BLOCK_SIZE * (2 << 5), m = 5;
     cl_int i, j;
     float *a = new float[n * n], *b = new float[n * n], *c = new float[n * n];
 
@@ -58,16 +58,6 @@ int main() {
     print_matrix(c, n, m, "OpenCL CPU (image) result:");
     clear_matrix(c, n);
 
-    // OpenCL GPU Block (image)
-    auto openCLGPUBlockImageTime = opencl_gemm_block_gpu_image(n, a, b, c);
-    print_matrix(c, n, m, "OpenCL GPU Block (image) result:");
-    clear_matrix(c, n);
-
-    // OpenCL GPU Block (image)
-    auto openCLCPUBlockImageTime = opencl_gemm_block_cpu_image(n, a, b, c);
-    print_matrix(c, n, m, "OpenCL CPU Block (image) result:");
-    clear_matrix(c, n);
-
     // Total OpenMP
     std::cout << "\nTime OpenMP:\n"
               << "OpenMP       " << std::chrono::duration_cast<std::chrono::milliseconds>(ompTime).count() << " ms\n"
@@ -83,9 +73,7 @@ int main() {
     // Total OpenCL with images instead of buffers
     std::cout << "\nTime OpenCL (image):\n"
               << "OpenCL GPU       " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLGPUImageTime).count() << " ms\n"
-              << "OpenCL CPU       " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLCPUImageTime).count() << " ms\n"
-              << "OpenCL GPU Block " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLGPUBlockImageTime).count() << " ms\n"
-              << "OpenCL CPU Block " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLCPUBlockImageTime).count() << " ms\n";
+              << "OpenCL CPU       " << std::chrono::duration_cast<std::chrono::milliseconds>(openCLCPUImageTime).count() << " ms\n";
 
     delete[] a, b, c;
 

@@ -1,7 +1,7 @@
 __kernel void gemm(const uint n, __global const float *a,
                    __global const float *b, __global float *c) {
-    const uint iRow = get_global_id(0);
-    const uint iCol = get_global_id(1);
+    const uint iRow = get_global_id(1);
+    const uint iCol = get_global_id(0);
 
     if (iRow < n && iCol < n) {
         float result = 0.0f;
