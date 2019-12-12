@@ -220,14 +220,14 @@ auto opencl_gemm_impl(const cl_uint n, const float *a, const float *b, float *c,
     clWaitForEvents(1, &event);
     auto time = std::chrono::steady_clock::now() - t0;
 
-	if (useImage) {
-		const size_t origin[] = { 0, 0, 0 };
-		const size_t region[] = { n, n, 1 };
-		RET_CODE_CHECK(retCode, clEnqueueReadImage(queue, cBuffer, CL_TRUE, origin, region, 0, 0, c, 0, 0, 0), "clEnqueueReadImage")
-	}
-	else {
-		RET_CODE_CHECK(retCode, clEnqueueReadBuffer(queue, cBuffer, CL_TRUE, 0, sizeof(float) * n * n, c, 0, 0, 0), "clEnqueueReadBuffer")
-	}
+    if (useImage) {
+        const size_t origin[] = { 0, 0, 0 };
+        const size_t region[] = { n, n, 1 };
+        RET_CODE_CHECK(retCode, clEnqueueReadImage(queue, cBuffer, CL_TRUE, origin, region, 0, 0, c, 0, 0, 0), "clEnqueueReadImage")
+    }
+    else {
+        RET_CODE_CHECK(retCode, clEnqueueReadBuffer(queue, cBuffer, CL_TRUE, 0, sizeof(float) * n * n, c, 0, 0, 0), "clEnqueueReadBuffer")
+    }
 
     clReleaseMemObject(aBuffer);
     clReleaseMemObject(bBuffer);
